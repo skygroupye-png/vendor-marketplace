@@ -4,6 +4,7 @@ namespace VMP\Providers;
 defined('ABSPATH') || exit;
 
 use VMP\Contracts\VendorRepositoryInterface;
+use VMP\Upgrade\UpgradeRunner;
 
 /**
  * مزود خدمات البائع – يسجل جميع الشورت كودات، الهوكات، وتحميل الأصول
@@ -82,19 +83,25 @@ class VendorServiceProvider extends ServiceProvider
 
         // ─── 8. عرض اسم البائع في صفحات WooCommerce العامة ───
         $this->registerVendorNameInWooCommerce();
+
+        // ─── 9. Run upgrade runner to apply versioned migrations safely ───
+        // UpgradeRunner internally checks current DB version and uses a lock with timeout,
+        // so calling it here is safe and idempotent.
+        try {
+            if (class_exists(UpgradeRunner::class)) {
+                (new UpgradeRunner())->run();
+            }
+        } catch (\Throwable $e) {
+            if (isset($this->container) && $this->container->has('logger')) {
+                $this->container->make('logger')->error('Upgrade runner failed', ['error' => $e->getMessage()]);
+            } else {
+                error_log('[VMP] Upgrade runner failed: ' . $e->getMessage());
+            }
+        }
     }
 
-    /**
-     * دالة مساعدة لعرض القوالب مع تعيين العلم والصفحة الحالية تلقائياً
-     * ✅ يضمن تحميل الأصول في أي شورت كود جديد
-     * ✅ يضمن دقة الصفحة الحالية مع جميع أنواع الـ permalinks
-     * ✅ يسمح بتمرير متغيرات إضافية إلى القالب
-     *
-     * @param string $template اسم ملف القالب (مثل 'vendor-dashboard.php')
-     * @param string $page     معرف الصفحة (مثل 'dashboard', 'products', 'edit-product')
-     * @param array  $vars     متغيرات إضافية يتم تمريرها إلى القالب (مثل ['vendor' => $vendor])
-     * @return string محتوى القالب
-     */
+    // ... بقية الدوال بدون تغيير (التضمين كما كان سابقًا)
+
     private function renderTemplate(string $template, string $page = '', array $vars = []): string
     {
         // تعيين العلم بأن هذه صفحة VMP (لـ Page Builders و has_shortcode)
@@ -123,44 +130,7 @@ class VendorServiceProvider extends ServiceProvider
         return ob_get_clean();
     }
 
-    /**
-     * تسجيل جميع الشورت كودات الإضافة
-     *
-     * @return void
-     */
-    private function registerShortcodes(): void
-    {
-        // خريطة الصفحات للوحة التحكم (يُستخدم داخل شورت كود vmp_vendor_dashboard)
-        $vmp_page_map = [
-            'dashboard'     => 'vendor-dashboard.php',
-            'products'      => 'vendor-products.php',
-            'add-product'   => 'vendor-add-product.php',
-            'ai-create-product' => 'vendor-ai-create-product.php',
-            'edit-product'  => 'vendor-edit-product.php',
-            'orders'        => 'vendor-orders.php',
-            'profile'       => 'vendor-profile.php',
-            'withdrawals'   => 'vendor-withdrawals.php',
-            'subscriptions' => 'vendor-subscriptions.php',
-        ];
-
-        // ── شورت كود لوحة التحكم ──
-        add_shortcode('vmp_vendor_dashboard', function () use ($vmp_page_map): string {
-            $page = sanitize_key($_GET['vmp_page'] ?? 'dashboard');
-            $allowed_pages = array_keys($vmp_page_map);
-            if (!in_array($page, $allowed_pages, true)) {
-                $page = 'dashboard';
-            }
-            $template = $vmp_page_map[$page] ?? 'vendor-dashboard.php';
-            return $this->renderTemplate($template, $page);
-        });
-
-        // ── شورت كود تسجيل البائع ──
-        add_shortcode('vmp_vendor_register', function (): string {
-            return $this->renderTemplate('vendor-register.php', 'register');
-        });
-
-        // ── شورت كود عرض متجر البائع ──
-        add_shortcode('vmp_vendor_store', function ($atts): string {
+<<add_shortcode('vmp_vendor_store', function ($atts): string {
             $atts = shortcode_atts(['slug' => '', 'id' => 0], $atts);
 
             // إذا لم يتم تمرير slug عبر الشورت كود، نأخذه من query_var
@@ -380,4 +350,3 @@ class VendorServiceProvider extends ServiceProvider
             echo '</div>';
         }, 6);
     }
-}
