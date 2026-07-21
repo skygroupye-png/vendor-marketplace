@@ -24,6 +24,11 @@ class VendorServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // ─── Add rewrite rule for /store/{slug} to populate vendor_store query_var ───
+        add_action('init', function(): void {
+            add_rewrite_rule('^store/([^/]+)/?$', 'index.php?vendor_store=$matches[1]', 'top');
+        }, 5);
+
         // ─── 1. إضافة vendor_store إلى query_vars ───
         // (المصدر الوحيد — حُذفت النسخة المكررة من vendor-marketplace.php)
         add_filter('query_vars', function (array $vars): array {
@@ -125,5 +130,223 @@ class VendorServiceProvider extends ServiceProvider
         return ob_get_clean();
     }
 
-    // rest of file unchanged: registerShortcodes, registerWooCommerceHooks, registerAssets, registerVendorNameInWooCommerce
-}
+<<add_shortcode('vmp_vendor_store', function ($atts): string {
+            $atts = shortcode_atts(['slug' => '', 'id' => 0], $atts);
+
+            // إذا لم يتم تمرير slug عبر الشورت كود، نأخذه من query_var
+            if (empty($atts['slug'])) {
+                $atts['slug'] = get_query_var('vendor_store', '');
+            } elseif (!empty($atts['id'])) {
+                $vendor = $vendor_repo->find((int) $atts['id']);
+            }
+
+            $vendor_repo = $this->container->make(VendorRepositoryInterface::class);
+
+            // البحث عن البائع
+            if (!empty($atts['slug'])) {
+                $vendor = $vendor_repo->findBySlug(sanitize_text_field($atts['slug']));
+            } elseif (!empty($atts['id'])) {
+                $vendor = $vendor_repo->find((int) $atts['id']);
+            } else {
+                $vendor = null;
+            }
+
+            // التحقق من وجود البائع وحالته
+            if (!$vendor || $vendor->status !== 'approved') {
+                return '<p class="vmp-not-found">' . __('المتجر غير موجود.', 'vmp') . '</p>';
+            }
+
+            // ✅ تمرير متغير $vendor إلى القالب
+            return $this->renderTemplate('vendor-store.php', 'store', ['vendor' => $vendor]);
+        });
+    }
+
+    /**
+     * تسجيل الهوكات التي تعتمد على WooCommerce
+     *
+     * @return void
+     */
+    private function registerWooCommerceHooks(): void
+    {
+        // منع الروابط المختصرة في صفحة المتجر
+        add_filter('pre_get_shortlink', static function ($shortlink, $id, $context, $allow_slugs) {
+            if ('query' === $context && get_query_var('vendor_store')) {
+                return '';
+            }
+            return $shortlink;
+        }, 10, 4);
+
+        // يمكن إضافة هوكات WooCommerce إضافية هنا مستقبلاً
+        // مثال: add_filter('woocommerce_product_data_store', ...);
+    }
+
+    /**
+     * تحميل أصول الإضافة (CSS/JS) – النسخة النهائية المحسنة
+     * ✅ تحميل wp_enqueue_media() شرطياً (فقط في صفحات رفع الملفات أو في أي صفحة VMP)
+     * ✅ تحميل vendor-products.js شرطياً (فقط في صفحة المنتجات)
+     * ✅ كائن JS واحد يحتوي كل شيء (vmp_public)
+     * ✅ nonce واحد للتطبيق العامة (vmp_public.nonce)
+     * ✅ nonce خاص للتسجيل (vmp_public.register_nonce) لحل مشكلة التسجيل
+     * ✅ يدعم Page Builders عبر GLOBALS['vmp_is_active']
+     * ✅ يدعم جميع أنواع الـ permalinks عبر GLOBALS['vmp_current_page']
+     *
+     * @return void
+     */
+    private function registerAssets(): void
+    {
+        add_action('wp_enqueue_scripts', function (): void {
+            // ─── 1. التحقق من أننا في صفحة VMP ───
+            $is_vmp_page = !empty($GLOBALS['vmp_is_active']);
+
+            // ─── 2. احتياطي: التحقق من post_content (للمحتوى الثابت) ───
+            if (!$is_vmp_page && !empty($GLOBALS['post'])) {
+                $content = $GLOBALS['post']->post_content ?? '';
+                $shortcodes = ['vmp_vendor_register', 'vmp_vendor_dashboard', 'vmp_vendor_store'];
+                foreach ($shortcodes as $sc) {
+                    if (has_shortcode($content, $sc)) {
+                        $is_vmp_page = true;
+                        break;
+                    }
+                }
+            }
+
+            // ─── 3. إذا لم تكن صفحة VMP، لا نحمّل أي أصول ───
+            if (!$is_vmp_page) {
+                return;
+            }
+
+            // ─── 4. الحصول على الصفحة الحالية (موثوق مع جميع أنواع الـ permalinks) ───
+            $current_page = $GLOBALS['vmp_current_page'] 
+                ?? sanitize_key($_GET['vmp_page'] ?? 'dashboard');
+
+            // ─── 5. Force load wp_enqueue_media() for any VMP page to avoid missing media scripts
+            // Some themes or page builders might not print required REST settings; we also provide a fallback below.
+            wp_enqueue_media();
+
+            // ─── 6. تحميل ملفات التصميم (CSS) ───
+            wp_enqueue_style(
+                'vmp-public',
+                VMP_PLUGIN_URL . 'public/css/public.css',
+                [],
+                VMP_VERSION
+            );
+
+            // ─── 7. تحميل ملف JavaScript العام (يُحمّل في كل صفحات VMP) ───
+            wp_enqueue_script(
+                'vmp-public',
+                VMP_PLUGIN_URL . 'public/js/public.js',
+                ['jquery', 'media-editor'],
+                VMP_VERSION,
+                true
+            );
+
+            // ─── 8. تحميل JS المنتجات فقط في صفحة المنتجات ───
+            if (in_array($current_page, ['products', 'add-product', 'edit-product'], true)) {
+                wp_enqueue_script(
+                    'vmp-products-js',
+                    VMP_PLUGIN_URL . 'public/js/vendor-products.js',
+                    ['jquery', 'vmp-public', 'media-editor'],
+                    VMP_VERSION,
+                    true
+                );
+            }
+
+            if ($current_page === 'ai-create-product') {
+                wp_enqueue_script(
+                    'vmp-ai-product-js',
+                    VMP_PLUGIN_URL . 'public/js/vendor-ai-product.js',
+                    ['jquery', 'vmp-public'],
+                    VMP_VERSION,
+                    true
+                );
+            }
+
+            // ─── 9. كائن واحد يحتوي كل شيء (بدون تكرار) ───
+            wp_localize_script('vmp-public', 'vmp_public', [
+                'ajax_url'       => admin_url('admin-ajax.php'),
+                'nonce'          => wp_create_nonce('vmp_public_nonce'), // ✅ nonce عام
+                'register_nonce' => wp_create_nonce('vmp_vendor_register_nonce'), // ✅ nonce خاص بالتسجيل
+                'page'           => $current_page, // ✅ الصفحة الحالية (موثوقة)
+                'plugin_url'     => VMP_PLUGIN_URL,
+                'dashboard_url'  => home_url('/vendor-dashboard/'),
+                'strings'        => [
+                    'loading'        => __('جاري...', 'vmp'),
+                    'delete'         => __('حذف', 'vmp'),
+                    'error'          => __('حدث خطأ', 'vmp'),
+                    'conn_error'     => __('حدث خطأ في الاتصال', 'vmp'),
+                    'confirm_delete' => __('هل أنت متأكد من حذف هذا المنتج؟', 'vmp'),
+                    'next'           => __('التالي', 'vmp'),
+                    'prev'           => __('السابق', 'vmp'),
+                    'submit'         => __('إرسال الطلب', 'vmp'),
+                ],
+            ]);
+
+            // ─── 10. Ensure REST API settings are available for wp.media on frontend ───
+            // Some themes/plugins may not print wpApiSettings in frontend; provide fallback
+            wp_localize_script('vmp-public', 'wpApiSettings', [
+                'root'  => esc_url_raw(rest_url()),
+                'nonce' => wp_create_nonce('wp_rest'),
+            ]);
+        });
+    }
+
+    /**
+     * عرض اسم البائع في صفحات WooCommerce العامة
+     * (صفحة أرشيف المنتجات + صفحة المنتج الفردي)
+     * ✅ يستخدم الدوال المساعدة من helpers.php
+     * ✅ يضيف رابطاً إلى صفحة متجر البائع
+     *
+     * @return void
+     */
+    private function registerVendorNameInWooCommerce(): void
+    {
+        // ── عرض اسم البائع تحت عنوان المنتج في صفحة المتجر (أرشيف المنتجات) ──
+        add_action('woocommerce_after_shop_loop_item_title', function () {
+            global $product;
+            if (!$product) {
+                return;
+            }
+
+            $vendor_id = vmp_get_product_vendor_id($product->get_id());
+            if (!$vendor_id) {
+                return;
+            }
+
+            $vendor = vmp_get_vendor($vendor_id);
+            if (!$vendor || $vendor->status !== 'approved') {
+                return;
+            }
+
+            echo '<div class="vmp-product-vendor" style="font-size: 12px; color: #64748b; margin-top: 2px; margin-bottom: 6px;">';
+            echo sprintf(
+                __('بواسطة %s', 'vmp'),
+                '<a href="' . home_url('/store/' . $vendor->store_slug) . '" style="color: #6366f1; text-decoration: none;">' . esc_html($vendor->store_name) . '</a>'
+            );
+            echo '</div>';
+        }, 6);
+
+        // ── عرض اسم البائع في صفحة المنتج الفردي (تفاصيل المنتج) ──
+        add_action('woocommerce_single_product_summary', function () {
+            global $product;
+            if (!$product) {
+                return;
+            }
+
+            $vendor_id = vmp_get_product_vendor_id($product->get_id());
+            if (!$vendor_id) {
+                return;
+            }
+
+            $vendor = vmp_get_vendor($vendor_id);
+            if (!$vendor || $vendor->status !== 'approved') {
+                return;
+            }
+
+            echo '<div class="vmp-product-vendor-single" style="font-size: 14px; color: #64748b; margin: 8px 0; border-top: 1px solid #e2e8f0; padding-top: 12px;">';
+            echo sprintf(
+                __('البائع: %s', 'vmp'),
+                '<a href="' . home_url('/store/' . $vendor->store_slug) . '" style="color: #6366f1; text-decoration: none; font-weight: 600;">' . esc_html($vendor->store_name) . '</a>'
+            );
+            echo '</div>';
+        }, 6);
+    }

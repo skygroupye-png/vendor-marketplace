@@ -21,6 +21,12 @@ foreach ($plans as $plan) {
 if ($default_plan_id === 0 && !empty($plans)) {
     $default_plan_id = (int) $plans[0]->id;
 }
+
+// الحصول على رابط صفحة الأحكام من الإعدادات (fallback لصفحة /terms/)
+$settings = get_option('vmp_settings', []);
+$terms_page_id = !empty($settings['display']['terms_page']) ? (int) $settings['display']['terms_page'] : 0;
+$terms_url = $terms_page_id && get_post($terms_page_id) ? get_permalink($terms_page_id) : home_url('/terms/');
+
 ?>
 
 <div class="vmp-wrap">
@@ -93,7 +99,8 @@ if ($default_plan_id === 0 && !empty($plans)) {
                     <div class="vmp-form-group">
                         <label><?php _e('رابط المتجر', 'vmp'); ?> <span class="required">*</span></label>
                         <div style="display:flex; align-items:center; direction:ltr;">
-                            <span style="background:var(--vmp-border); padding:11px 14px; border-radius:6px 0 0 6px; font-size:13px; color:var(--vmp-text-muted); border:1.5px solid var(--vmp-border); border-right:none;"><?php echo home_url('/store/'); ?></span>
+                            <span style="background:var(--vmp-border); padding:11px 14px; border-radius:6px 0 0 6px; font-size:13px; color:var(--vmp-text-muted); border:1.5px solid var(--vmp-border);">
+                                <?php echo home_url('/store/'); ?></span>
                             <input type="text" name="store_slug" class="vmp-input" required style="border-radius:0 6px 6px 0; direction:ltr;">
                         </div>
                         <div class="vmp-input-hint"><?php _e('استخدم أحرفاً وأرقاماً فقط بدون مسافات.', 'vmp'); ?></div>
@@ -102,6 +109,14 @@ if ($default_plan_id === 0 && !empty($plans)) {
                         <label><?php _e('رقم الهاتف (للتواصل عبر واتساب)', 'vmp'); ?> <span class="required">*</span></label>
                         <input type="tel" name="phone" class="vmp-input" required dir="ltr" placeholder="+966500000000">
                         <div class="vmp-input-hint"><?php _e('ادخل رقم الهاتف مع رمز الدولة.', 'vmp'); ?></div>
+                    </div>
+
+                    <!-- شروط الاستخدام -->
+                    <div class="vmp-form-group">
+                        <label>
+                            <input type="checkbox" name="terms_accept" value="1" required>
+                            <?php printf(__('أوافق على <a href="%s" target="_blank">الأحكام والشروط</a>', 'vmp'), esc_url($terms_url)); ?> <span class="required">*</span>
+                        </label>
                     </div>
 
                     <div style="display: flex; justify-content: space-between; margin-top: 24px;">
@@ -193,7 +208,6 @@ if ($default_plan_id === 0 && !empty($plans)) {
                     <div style="display: flex; justify-content: space-between; margin-top: 24px; border-top: 1px solid var(--vmp-border); padding-top: 20px;">
                         <button type="button" class="vmp-btn vmp-btn-outline vmp-btn-prev">&rarr; <?php _e('السابق', 'vmp'); ?></button>
                         <button type="submit" class="vmp-btn vmp-btn-success">
-                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style="width:20px;height:20px;display:inline-block;vertical-align:middle;margin-right:6px;"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
                             <?php _e('إنشاء حساب المتجر', 'vmp'); ?>
                         </button>
                     </div>
