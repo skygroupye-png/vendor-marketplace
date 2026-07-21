@@ -32,10 +32,11 @@ class RegisterVendorRequest extends AbstractRequest
             'store_name' => ['required', 'string', 'min:3', 'max:100'],
             'user_email' => ['required', 'email'],
             'store_slug' => ['string'],
-            'phone'      => ['string', 'phone'],
-            'first_name' => ['string'],
-            'last_name'  => ['string'],
-            'user_pass'  => ['string', 'min:6'],
+            'phone'      => ['required', 'phone'],
+            'first_name' => ['required', 'string'],
+            'last_name'  => ['required', 'string'],
+            'user_pass'  => ['required', 'string', 'min:6'],
+            'terms_accept' => ['required', 'boolean'],
         ];
     }
 
@@ -52,6 +53,7 @@ class RegisterVendorRequest extends AbstractRequest
             'first_name' => __('الاسم الأول', 'vmp'),
             'last_name'  => __('الاسم الأخير', 'vmp'),
             'user_pass'  => __('كلمة المرور', 'vmp'),
+            'terms_accept' => __('الموافقة على الأحكام', 'vmp'),
         ];
     }
 
@@ -90,13 +92,19 @@ class RegisterVendorRequest extends AbstractRequest
             $errors[] = __('هذا البريد الإلكتروني مسجّل مسبقاً.', 'vmp');
         }
 
-        // 4. تحقق من أن الـ slug لا يحتوي إلا على أحرف مناسبة
+        // 4. التحقق من صحة الهاتف (محسّن بالقاعدة phone في AbstractRequest)
+        $phone = $this->string('phone');
+        if (empty($phone) || !preg_match('/^\+?[0-9]{7,15}$/', preg_replace('/\s/', '', $phone))) {
+            $errors[] = __('رقم الهاتف غير صالح أو مفقود.', 'vmp');
+        }
+
+        // 5. التحقق من أن الـ slug لا يحتوي إلا على أحرف مناسبة
         $slug = $this->string('store_slug') ?: sanitize_title($storeName);
         if ($slug && !preg_match('/^[a-z0-9\-]+$/', $slug)) {
             $errors[] = $this->messages()['store_slug.regex'];
         }
 
-        // 5. التحقق من عدم تكرار الـ slug باستخدام VendorRepositoryInterface
+        // 6. التحقق من عدم تكرار الـ slug باستخدام VendorRepositoryInterface
         if ($slug) {
             /** @var VendorRepositoryInterface $vendorRepo */
             $vendorRepo = Container::getInstance()->make(VendorRepositoryInterface::class);
@@ -105,7 +113,7 @@ class RegisterVendorRequest extends AbstractRequest
             }
         }
 
-        // 6. التحقق من الأسماء (الأول والأخير)
+        // 7. التحقق من الأسماء (الأول والأخير)
         $firstName = $this->string('first_name');
         if ($firstName && !preg_match('/^[\p{L}\s\-]+$/u', $firstName)) {
             $errors[] = __('الاسم الأول يجب أن يحتوي على أحرف فقط.', 'vmp');
@@ -114,6 +122,11 @@ class RegisterVendorRequest extends AbstractRequest
         $lastName = $this->string('last_name');
         if ($lastName && !preg_match('/^[\p{L}\s\-]+$/u', $lastName)) {
             $errors[] = __('الاسم الأخير يجب أن يحتوي على أحرف فقط.', 'vmp');
+        }
+
+        // 8. تحقق من قبول الأحكام
+        if (!$this->bool('terms_accept')) {
+            $errors[] = __('يجب الموافقة على الأحكام والشروط.', 'vmp');
         }
 
         if (!empty($errors)) {

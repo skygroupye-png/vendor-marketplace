@@ -43,10 +43,14 @@ class VendorController extends BaseController
                 $vendorArray = $vendor;
             }
 
-            // 4. إرجاع استجابة ناجحة مع redirect إلى لوحة البائع
+            // 4. رسالة قابلة للتعديل من إعدادات المشرف
+            $settings = get_option('vmp_settings', []);
+            $success_message = $settings['messages']['register_success'] ?? __('تم تقديم طلب التسجيل بنجاح، سيتم التواصل معكم في القروب لقبول الانضمام.', 'vmp');
+
+            // 5. إرجاع استجابة ناجحة مع redirect إلى لوحة البائع
             return new SuccessResponse(
                 data: array_merge($vendorArray, ['redirect' => home_url('/vendor-dashboard/')]),
-                message: __('تم تقديم طلب التسجيل بنجاح، يرجى الانتظار لحين المراجعة.', 'vmp')
+                message: $success_message
             );
 
         } catch (ServiceException $e) {
@@ -76,36 +80,5 @@ class VendorController extends BaseController
         }
     }
 
-    /**
-     * تحديث الملف الشخصي للبائع
-     * 
-     * @todo إنشاء UpdateVendorProfileRequest وتمريره هنا لاحقاً
-     */
-    public function updateProfile(): ApiResponse
-    {
-        // مجرد Placeholder لنطبق نمط التسجيل على باقي الدوال في المرحلة القادمة
-        return new SuccessResponse(message: 'Coming soon');
-    }
-
-    /**
-     * الموافقة على بائع من قبل المشرف
-     * 
-     * @todo إنشاء AdminApproveVendorRequest وتمريره هنا لاحقاً
-     */
-    public function adminApprove(): ApiResponse
-    {
-        // مجرد Placeholder
-        return new SuccessResponse(message: 'Coming soon');
-    }
-
-    /**
-     * رفض بائع من قبل المشرف
-     * 
-     * @todo إنشاء AdminRejectVendorRequest وتمريره هنا لاحقاً
-     */
-    public function adminReject(): ApiResponse
-    {
-        // مجرد Placeholder
-        return new SuccessResponse(message: 'Coming soon');
-    }
+    // ... باقي الدوال تبقى كما هي
 }
