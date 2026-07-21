@@ -23,6 +23,11 @@ class VendorServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // ─── Add rewrite rule for /store/{slug} to populate vendor_store query_var ───
+        add_action('init', function(): void {
+            add_rewrite_rule('^store/([^/]+)/?$', 'index.php?vendor_store=$matches[1]', 'top');
+        }, 5);
+
         // ─── 1. إضافة vendor_store إلى query_vars ───
         // (المصدر الوحيد — حُذفت النسخة المكررة من vendor-marketplace.php)
         add_filter('query_vars', function (array $vars): array {
@@ -266,11 +271,11 @@ class VendorServiceProvider extends ServiceProvider
             );
 
             // ─── 8. تحميل JS المنتجات فقط في صفحة المنتجات ───
-            if ($current_page === 'products') {
+            if (in_array($current_page, ['products', 'add-product', 'edit-product'], true)) {
                 wp_enqueue_script(
                     'vmp-products-js',
                     VMP_PLUGIN_URL . 'public/js/vendor-products.js',
-                    ['jquery', 'vmp-public'],
+                    ['jquery', 'vmp-public', 'media-editor'],
                     VMP_VERSION,
                     true
                 );
