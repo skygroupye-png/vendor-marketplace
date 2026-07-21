@@ -24,10 +24,13 @@ class AdminServiceProvider extends ServiceProvider
     {
         // ── قائمة الإضافة الرئيسية ──
         add_action('admin_menu', static function (): void {
+            // استخدم قدرة احتياطية للمشرف (manage_options) إن كانت متاحة
+            $menu_capability = current_user_can('manage_options') ? 'manage_options' : 'vmp_manage_vendors';
+
             add_menu_page(
                 __('Vendor Marketplace', 'vmp'),
                 __('Vendor Marketplace', 'vmp'),
-                'vmp_manage_vendors',
+                $menu_capability,
                 'vmp-dashboard',
                 static function (): void {
                     require_once VMP_PLUGIN_DIR . 'admin/pages/dashboard.php';
@@ -53,11 +56,14 @@ class AdminServiceProvider extends ServiceProvider
 
             foreach ($sub_pages as $page) {
                 $file = $page[4];
+                // إذا كان المشرف لديه manage_options فنجعل capability للصفحة هي manage_options
+                $capability = current_user_can('manage_options') ? 'manage_options' : $page[3];
+
                 add_submenu_page(
                     'vmp-dashboard',
                     $page[1],
                     $page[2],
-                    $page[3],
+                    $capability,
                     $page[0],
                     static function () use ($file): void {
                         $path = VMP_PLUGIN_DIR . 'admin/pages/' . $file;
@@ -76,6 +82,11 @@ class AdminServiceProvider extends ServiceProvider
             // تحميل فقط في صفحات VMP
             if (strpos($hook, 'vmp') === false) {
                 return;
+            }
+
+            // Ensure WP media scripts are available in admin VMP pages (for image picker)
+            if (function_exists('wp_enqueue_media')) {
+                wp_enqueue_media();
             }
 
             // ── الأنماط (CSS) ──
