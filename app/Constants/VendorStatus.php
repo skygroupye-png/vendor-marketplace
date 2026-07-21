@@ -3,10 +3,12 @@ namespace VMP\Constants;
 
 defined('ABSPATH') || exit;
 
-enum VendorStatus: string
+final class VendorStatus
 {
-    case Pending = 'pending';
-    case Approved = 'approved';
-    case Rejected = 'rejected';
-    case Suspended = 'suspended';
+    public const PENDING   = 'pending';
+    public const APPROVED  = 'approved';
+    public const REJECTED  = 'rejected';
+    public const SUSPENDED = 'suspended';
+
+    private function __construct() {}
 }
