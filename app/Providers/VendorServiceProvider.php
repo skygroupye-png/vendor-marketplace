@@ -80,13 +80,15 @@ class VendorServiceProvider extends ServiceProvider
         $this->registerVendorNameInWooCommerce();
 
         // ─── 9. Run upgrade runner to apply versioned migrations safely ───
+        // UpgradeRunner internally checks current DB version and uses a lock with timeout,
+        // so calling it here is safe and idempotent.
         try {
             if (class_exists(UpgradeRunner::class)) {
                 (new UpgradeRunner())->run();
             }
         } catch (\Throwable $e) {
-            if ($this->container->has('logger')) {
-                $this->make('logger')->error('Upgrade runner failed', ['error' => $e->getMessage()]);
+            if (isset($this->container) && $this->container->has('logger')) {
+                $this->container->make('logger')->error('Upgrade runner failed', ['error' => $e->getMessage()]);
             } else {
                 error_log('[VMP] Upgrade runner failed: ' . $e->getMessage());
             }
